@@ -8,21 +8,13 @@
 #include <stdlib.h>
 #include <string.h>
 
-const char *gProcessorName[] = {
-		"unknown",
-		"601",
-		"603",
-		"603e",
-		"604",
-		"604e",
-		"unknown",
-		"unknown",
-		"unknown",
-		"unknown",
-		"unknown",
-		"unknown",
-		"unknown"
-};
+// Modern Intel and AMD model names only exist in the brand string of the
+// processor itself (CPUID leaves 0x80000002 - 0x80000004).  GCC provides
+// <cpuid.h> for that; without the header we keep the vendor name instead.
+#if (defined(__i386__) || defined(__x86_64__)) && __has_include(<cpuid.h>)
+#	include <cpuid.h>
+#	define AP_HAVE_CPUID 1
+#endif
 
 
 BRect AnalogView::computeTick(float vu, BPoint center, long length, float start, float stop)
@@ -52,8 +44,6 @@ cpuPlatformName(enum cpu_platform platform)
 	{
 		case B_CPU_x86:		return "x86";
 		case B_CPU_x86_64:	return "x86_64";
-		case B_CPU_PPC:		return "PowerPC";
-		case B_CPU_PPC_64:	return "PowerPC 64";
 		case B_CPU_M68K:	return "m68k";
 		case B_CPU_ARM:		return "ARM";
 		case B_CPU_ARM_64:	return "ARM 64";
@@ -90,10 +80,113 @@ cpuVendorName(enum cpu_vendor vendor)
 	}
 }
 
+#ifdef AP_HAVE_CPUID
+// Reads the 48 byte processor brand string (CPUID 0x80000002 - 0x80000004),
+// for example "Intel(R) Core(TM) i7-12700K CPU @ 2.10GHz" or
+// "AMD Ryzen 9 5900X 12-Core Processor".  Returns false when the processor
+// reports none.
+static bool
+cpuBrandString(char* out, size_t outSize)
+{
+	if(__get_cpuid_max(0x80000000u, NULL) < 0x80000004u)
+		return false;
+
+	char	brand[49];
+	for(unsigned leaf = 0x80000002u; leaf <= 0x80000004u; leaf++)
+	{
+		unsigned	regs[4] = { 0, 0, 0, 0 };
+		__cpuid(leaf, regs[0], regs[1], regs[2], regs[3]);
+		memcpy(brand + (leaf - 0x80000002u) * 16, regs, sizeof(regs));
+	}
+	brand[48] = '\0';
+
+	// vendors blank pad the string on both ends
+	char* first = brand;
+	while(*first == ' ')
+		first++;
+	char* last = first + strlen(first);
+	while(last > first && last[-1] == ' ')
+		last--;
+	*last = '\0';
+
+	if(*first == '\0')
+		return false;
+
+	snprintf(out, outSize, "%s", first);
+	return true;
+}
+
+// Drops the vendor's decoration so the model name fits on the panel:
+// "Intel(R) Core(TM) i7-12700K CPU @ 2.10GHz" -> "Intel Core i7-12700K"
+// "AMD Ryzen 9 5900X 12-Core Processor"       -> "AMD Ryzen 9 5900X"
+static void
+cpuModelName(const char* brand, char* out, size_t outSize)
+{
+	const char*	p = brand;
+	size_t		used = 0;
+
+	out[0] = '\0';
+	while(*p != '\0')
+	{
+		while(*p == ' ' || *p == '\t')
+			p++;
+
+		const char* word = p;
+		while(*p != '\0' && *p != ' ' && *p != '\t')
+			p++;
+
+		size_t length = (size_t)(p - word);
+		if(length == 0)
+			break;
+		// the clock after '@' is already shown by the meter, "with ..."
+		// only appends the GPU of the processor
+		if(word[0] == '@')
+			break;
+		if(length == 4 && memcmp(word, "with", 4) == 0)
+			break;
+
+		bool decoration = (length == 3 && memcmp(word, "(R)", 3) == 0)
+			|| (length == 3 && memcmp(word, "(r)", 3) == 0)
+			|| (length == 4 && memcmp(word, "(TM)", 4) == 0)
+			|| (length == 4 && memcmp(word, "(tm)", 4) == 0)
+			|| (length == 3 && memcmp(word, "CPU", 3) == 0)
+			|| (length == 9 && memcmp(word, "Processor", 9) == 0)
+			|| (length > 5 && memcmp(word + length - 5, "-Core", 5) == 0);
+		if(decoration)
+			continue;
+
+		if(used + length + 2 > outSize)
+			break;
+		if(used != 0)
+			out[used++] = ' ';
+		memcpy(out + used, word, length);
+		used += length;
+		out[used] = '\0';
+	}
+}
+#endif // AP_HAVE_CPUID
+
+// The name and the clock share the top right corner of the panel, so cut the
+// name down until both fit.
+static void
+clipToWidth(BView* view, char* text, float maxWidth)
+{
+	size_t length = strlen(text);
+
+	while(length > 0 && view->StringWidth(text) > maxWidth)
+	{
+		length--;
+		// never split a UTF-8 sequence
+		while(length > 0 && ((unsigned char)text[length] & 0xC0) == 0x80)
+			length--;
+		text[length] = '\0';
+	}
+}
+
 // Fills in a human readable CPU name and the nominal clock speed in Hz.
 // Either value may end up empty/zero when the system does not report it.
 static void
-getCPUIdentification(const char** name, uint64* frequency)
+getCPUIdentification(char* name, size_t nameSize, uint64* frequency)
 {
 	enum cpu_platform		platform = B_CPU_UNKNOWN;
 	enum cpu_vendor			vendor = B_CPU_VENDOR_UNKNOWN;
@@ -133,7 +226,16 @@ getCPUIdentification(const char** name, uint64* frequency)
 	if(cpuName == NULL)
 		cpuName = cpuPlatformName(platform);
 
-	*name = cpuName;
+	name[0] = '\0';
+#ifdef AP_HAVE_CPUID
+	// recent Intel and AMD processors are recognised by their model name
+	char brand[64];
+	if(cpuBrandString(brand, sizeof(brand)))
+		cpuModelName(brand, name, nameSize);
+#endif
+	if(name[0] == '\0')
+		snprintf(name, nameSize, "%s", cpuName);
+
 	*frequency = defaultFrequency;
 }
 
@@ -146,7 +248,7 @@ BBitmap* AnalogView::makePanel(BRect r)
 	float			width;
 	char			buf[500];
 	uint64			cpu_speed;
-	const char*		processor;
+	char			processor[64];
 	BFont			font;
 
 	get_system_info(&sysInfo);	
@@ -234,7 +336,7 @@ BBitmap* AnalogView::makePanel(BRect r)
 	font.SetFamilyAndStyle("Dutch801 Rm BT", "Bold");
 	view->SetFont(&font, B_FONT_ALL);
 	view->SetFontSize(12);
-	strcpy(buf, "CPU [%]");
+	sprintf(buf, "CPU [%d]", param.cpu);
 	view->MovePenTo(param.meterCenter.x - view->StringWidth(buf)/ 2, 75);
 	view->DrawString(buf);
 	
@@ -244,7 +346,7 @@ BBitmap* AnalogView::makePanel(BRect r)
 		font.SetFamilyAndStyle("Swis721 BT", "Roman");
 		view->SetFont(&font);
 		view->SetFontSize(9);
-		getCPUIdentification(&processor, &cpu_speed);
+		getCPUIdentification(processor, sizeof(processor), &cpu_speed);
 
 		if(cpu_speed > 0)
 		{
@@ -260,6 +362,7 @@ BBitmap* AnalogView::makePanel(BRect r)
 				}
 			}
 			sprintf(buf, "%dMHz", target + delta);
+			clipToWidth(view, processor, rt.Width() - view->StringWidth(buf) - 8);
 			view->MovePenTo(rt.right - view->StringWidth(processor) - view->StringWidth(buf) - 5, 12);
 			view->DrawString(processor);
 			view->MovePenTo(rt.right - view->StringWidth(buf) - 3, 12);
@@ -268,6 +371,7 @@ BBitmap* AnalogView::makePanel(BRect r)
 		else
 		{
 			// No clock speed reported: just name the CPU.
+			clipToWidth(view, processor, rt.Width() - 6);
 			view->MovePenTo(rt.right - view->StringWidth(processor) - 3, 12);
 			view->DrawString(processor);
 		}
