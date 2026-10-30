@@ -7,6 +7,21 @@
 #include <Alert.h>
 #include <Autolock.h>
 
+// Haiku's system_info no longer carries the per-CPU cpu_infos[] array that
+// BeOS had. Per-CPU busy time is fetched with get_cpu_info() instead.
+static double
+cpuActiveTime(int cpu)
+{
+	if (cpu < 0)
+		return 0;
+
+	cpu_info	info[1];
+	if (get_cpu_info((uint32)cpu, 1, info) != B_OK)
+		return 0;
+
+	return (double)info[0].active_time;
+}
+
 AnalogView::AnalogView(BRect r, int cpu)
 		   : _inherited(r, "", B_FOLLOW_NONE, B_WILL_DRAW | B_PULSE_NEEDED)
 {
@@ -34,10 +49,7 @@ void AnalogView::InitObject(BRect rt, int cpu)
 	rt.OffsetTo(B_ORIGIN);
 	param.cpu = cpu;
 
-	system_info		sysInfo;
-	
-	get_system_info(&sysInfo);
-	oldActiveTime = sysInfo.cpu_infos[cpu].active_time; 
+	oldActiveTime = cpuActiveTime(cpu);
 	oldSystemTime = system_time();
 	nowCPUTime = 0;
 	oldCPUTime = -1;
@@ -77,20 +89,19 @@ AnalogView::Archive(BMessage *data,bool deep) const
 
 void AnalogView::Pulse()
 {
-	system_info		sysInfo;
 	short			CPUTime;
 	double			now;
+	double			activeTime;
 	
 	now  = system_time();
-	get_system_info(&sysInfo);
+	activeTime = cpuActiveTime(param.cpu);
 		
 	// calculate the CPU load fraction
-	CPUTime = 100 * (sysInfo.cpu_infos[param.cpu].active_time - oldActiveTime)
-			/ (now - oldSystemTime);
+	CPUTime = 100 * (activeTime - oldActiveTime) / (now - oldSystemTime);
 	if(CPUTime > 100)
 		CPUTime = 100;
 	// store values for next iteration
-	oldActiveTime = sysInfo.cpu_infos[param.cpu].active_time;
+	oldActiveTime = activeTime;
 	oldSystemTime = now;
 	
 	UpdateNeedle(CPUTime);

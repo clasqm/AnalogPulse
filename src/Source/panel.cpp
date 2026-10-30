@@ -4,8 +4,11 @@
 
 #include <Picture.h>
 #include <stdio.h>
+#include <math.h>
+#include <stdlib.h>
+#include <string.h>
 
-char *gProcessorName[] = {
+const char *gProcessorName[] = {
 		"unknown",
 		"601",
 		"603",
@@ -40,6 +43,100 @@ BRect AnalogView::computeTick(float vu, BPoint center, long length, float start,
 	return r;
 }
 
+// Haiku dropped system_info::cpu_type, ::cpu_clock_speed and ::cpu_infos.
+// CPU identification and clock speed now come from the CPU topology API.
+static const char*
+cpuPlatformName(enum cpu_platform platform)
+{
+	switch(platform)
+	{
+		case B_CPU_x86:		return "x86";
+		case B_CPU_x86_64:	return "x86_64";
+		case B_CPU_PPC:		return "PowerPC";
+		case B_CPU_PPC_64:	return "PowerPC 64";
+		case B_CPU_M68K:	return "m68k";
+		case B_CPU_ARM:		return "ARM";
+		case B_CPU_ARM_64:	return "ARM 64";
+		case B_CPU_ALPHA:	return "Alpha";
+		case B_CPU_MIPS:	return "MIPS";
+		case B_CPU_SH:		return "SH";
+		case B_CPU_SPARC:	return "SPARC";
+		case B_CPU_RISC_V:	return "RISC-V";
+		default:			return "unknown";
+	}
+}
+
+static const char*
+cpuVendorName(enum cpu_vendor vendor)
+{
+	switch(vendor)
+	{
+		case B_CPU_VENDOR_AMD:		return "AMD";
+		case B_CPU_VENDOR_CYRIX:	return "Cyrix";
+		case B_CPU_VENDOR_IDT:		return "IDT";
+		case B_CPU_VENDOR_INTEL:	return "Intel";
+		case B_CPU_VENDOR_NATIONAL_SEMICONDUCTOR:
+									return "National Semiconductor";
+		case B_CPU_VENDOR_RISE:		return "RISE";
+		case B_CPU_VENDOR_TRANSMETA:	return "Transmeta";
+		case B_CPU_VENDOR_VIA:		return "VIA";
+		case B_CPU_VENDOR_IBM:		return "IBM";
+		case B_CPU_VENDOR_MOTOROLA:	return "Motorola";
+		case B_CPU_VENDOR_NEC:		return "NEC";
+		case B_CPU_VENDOR_HYGON:	return "Hygon";
+		case B_CPU_VENDOR_SUN:		return "Sun";
+		case B_CPU_VENDOR_FUJITSU:	return "Fujitsu";
+		default:					return NULL;
+	}
+}
+
+// Fills in a human readable CPU name and the nominal clock speed in Hz.
+// Either value may end up empty/zero when the system does not report it.
+static void
+getCPUIdentification(const char** name, uint64* frequency)
+{
+	enum cpu_platform		platform = B_CPU_UNKNOWN;
+	enum cpu_vendor			vendor = B_CPU_VENDOR_UNKNOWN;
+	uint64					defaultFrequency = 0;
+	uint32					nodeCount = 0;
+
+	// Same two call pattern the BeOS compatibility layer uses: first ask
+	// for the number of topology nodes, then fill the array.
+	if(get_cpu_topology_info(NULL, &nodeCount) == B_OK && nodeCount > 0)
+	{
+		cpu_topology_node_info* nodes = new cpu_topology_node_info[nodeCount];
+		if(nodes != NULL && get_cpu_topology_info(nodes, &nodeCount) == B_OK)
+		{
+			for(uint32 i = 0; i < nodeCount; i++)
+			{
+				switch(nodes[i].type)
+				{
+					case B_TOPOLOGY_ROOT:
+						platform = nodes[i].data.root.platform;
+						break;
+					case B_TOPOLOGY_PACKAGE:
+						vendor = nodes[i].data.package.vendor;
+						break;
+					case B_TOPOLOGY_CORE:
+						if(defaultFrequency == 0)
+							defaultFrequency = nodes[i].data.core.default_frequency;
+						break;
+					default:
+						break;
+				}
+			}
+		}
+		delete[] nodes;
+	}
+
+	const char* cpuName = cpuVendorName(vendor);
+	if(cpuName == NULL)
+		cpuName = cpuPlatformName(platform);
+
+	*name = cpuName;
+	*frequency = defaultFrequency;
+}
+
 BBitmap* AnalogView::makePanel(BRect r)
 {
 	system_info		sysInfo;
@@ -48,8 +145,8 @@ BBitmap* AnalogView::makePanel(BRect r)
 	float			penSize;
 	float			width;
 	char			buf[500];
-	int			cpu_speed;
-	char*		processor;
+	uint64			cpu_speed;
+	const char*		processor;
 	BFont			font;
 
 	get_system_info(&sysInfo);	
@@ -141,132 +238,39 @@ BBitmap* AnalogView::makePanel(BRect r)
 	view->MovePenTo(param.meterCenter.x - view->StringWidth(buf)/ 2, 75);
 	view->DrawString(buf);
 	
-	if(param.cpu + 1 == sysInfo.cpu_count)
+	if((uint32)(param.cpu + 1) == sysInfo.cpu_count)
 	{
 
 		font.SetFamilyAndStyle("Swis721 BT", "Roman");
 		view->SetFont(&font);
 		view->SetFontSize(9);
-		/*if (sysInfo.cpu_type > 0 && sysInfo.cpu_type < 14)
-			processor = gProcessorName[sysInfo.cpu_type];
-		else
-			processor = "unknown";
-		*/
-		switch(sysInfo.cpu_type)
-		{
-		case B_CPU_PPC_601:
-			processor = "PowerPC 601";
-			break;
-		case B_CPU_PPC_603:
-			processor = "PowerPC 603";
-			break;
-		case B_CPU_PPC_603e:
-			processor = "PowerPC 603e";
-			break;
-		case B_CPU_PPC_604:
-			processor = "PowerPC 604";
-			break;
-		case B_CPU_PPC_604e:
-			processor = "PowerPC 604e";
-			break;
-		case B_CPU_PPC_750:
-			processor = "PowerPC G3";
-			break;
-		case B_CPU_INTEL_X86:
-			processor = "Intel x86";
-			break;	
-		case B_CPU_INTEL_PENTIUM:
-		case B_CPU_INTEL_PENTIUM75:
-			processor = "Intel Pentium";
-			break;
-		case B_CPU_INTEL_PENTIUM_486_OVERDRIVE:
-		case B_CPU_INTEL_PENTIUM75_486_OVERDRIVE:	
-			processor = "Intel Pentium OverDrive";
-			break;
-		case B_CPU_INTEL_PENTIUM_MMX:
-//		case B_CPU_INTEL_PENTIUM_MMX_MODEL_4:
-		case B_CPU_INTEL_PENTIUM_MMX_MODEL_8:	
-			processor = "Intel Pentium MMX";
-			break;	
-		case B_CPU_INTEL_PENTIUM_PRO:
-			processor = "Intel Pentium Pro";
-			break;
-		case B_CPU_INTEL_PENTIUM_II:
-//	case B_CPU_INTEL_PENTIUM_II_MODEL_3:
-		case B_CPU_INTEL_PENTIUM_II_MODEL_5:
-			processor = "Intel Pentium II";
-			break;
-		case B_CPU_INTEL_CELERON:
-			processor = "Intel Celeron";
-			break;
-		case B_CPU_INTEL_PENTIUM_III:
-#ifdef B_BEOS_VERSION_5
-		case B_CPU_INTEL_PENTIUM_III_MODEL_8:
-#endif
-			processor = "Intel Pentium III";
-			break;
-#ifdef B_BEOS_VERSION_5
-		case B_CPU_AMD_ATHLON_MODEL1:
-			processor = "AMD ATHLON";
-			break;
-#endif
-		case B_CPU_AMD_X86:
-			processor = "AMD x86";
-		 	break;
-		case B_CPU_AMD_K5_MODEL0:
-		case B_CPU_AMD_K5_MODEL1:
-		case B_CPU_AMD_K5_MODEL2:
-		case B_CPU_AMD_K5_MODEL3:
-			processor = "AMD K5";
-			break;
-		case B_CPU_AMD_K6_MODEL6:
-		case B_CPU_AMD_K6_MODEL7:
-		case B_CPU_AMD_K6_MODEL8:
-//		case B_CPU_AMD_K6_2:
-		case B_CPU_AMD_K6_MODEL9:
-			processor = "AMD K6 III";
-			break;
-		case B_CPU_CYRIX_X86:
-			processor = "Cyrix x86";
-			break;
-		case B_CPU_CYRIX_GXm:
-			processor = "Cyrix GXm";
-			break;
-		case B_CPU_CYRIX_6x86MX:
-			processor = "Cyrix 6x86MX";
-			break;
-		case B_CPU_RISE_X86:
-			processor = "RISE x86";
-			break;
-		case B_CPU_RISE_mP6:
-			processor = "RISE mP6";
-			break;
-		default:
-			processor = "unknown";
-		}
-		cpu_speed = sysInfo.cpu_clock_speed;
-		if(strcmp(processor,"PowerPC 604e") == 0)
-			cpu_speed *= 3;
-		//	cpu_speed = ((cpu_speed + 500000)/1000000)*1000000;
-		//	cpu_speed /= 1000000;
-		int target = cpu_speed / 1000000;
-		int frac = target % 100;
-		int delta = -frac;
-		int at = 0;
-		int freqs[] = { 100, 50, 25, 75, 33, 67, 20, 40, 60, 80, 10, 30, 70, 90 };
+		getCPUIdentification(&processor, &cpu_speed);
 
-		for (uint x = 0; x < sizeof(freqs) / sizeof(freqs[0]); x++) {
-			int ndelta = freqs[x] - frac;
-			if (abs(ndelta) < abs(delta)) {
-				at = freqs[x];
-				delta = ndelta;
+		if(cpu_speed > 0)
+		{
+			int target = (int)(cpu_speed / 1000000);
+			int frac = target % 100;
+			int delta = -frac;
+			int freqs[] = { 100, 50, 25, 75, 33, 67, 20, 40, 60, 80, 10, 30, 70, 90 };
+
+			for (size_t x = 0; x < sizeof(freqs) / sizeof(freqs[0]); x++) {
+				int ndelta = freqs[x] - frac;
+				if (abs(ndelta) < abs(delta)) {
+					delta = ndelta;
+				}
 			}
+			sprintf(buf, "%dMHz", target + delta);
+			view->MovePenTo(rt.right - view->StringWidth(processor) - view->StringWidth(buf) - 5, 12);
+			view->DrawString(processor);
+			view->MovePenTo(rt.right - view->StringWidth(buf) - 3, 12);
+			view->DrawString(buf);
 		}
-		sprintf(buf, "%dMHz", target + delta);
-		view->MovePenTo(rt.right - view->StringWidth(processor) - view->StringWidth(buf) - 5, 12);
-		view->DrawString(processor);
-		view->MovePenTo(rt.right - view->StringWidth(buf) - 3, 12);
-		view->DrawString(buf);
+		else
+		{
+			// No clock speed reported: just name the CPU.
+			view->MovePenTo(rt.right - view->StringWidth(processor) - 3, 12);
+			view->DrawString(processor);
+		}
 	}
 	
 	view->EndPicture();

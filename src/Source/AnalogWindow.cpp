@@ -20,9 +20,9 @@ AnalogWindow::AnalogWindow(BRect bound, const char *title)
 	get_system_info(&sysInfo);	
 	rect.Set(0, 0, kMeterWidth, kMeterHeight);
 
-	for(int cpu = 0; cpu < sysInfo.cpu_count; cpu++)
+	for(uint32 cpu = 0; cpu < sysInfo.cpu_count; cpu++)
 	{
-		analog = new AnalogView(rect, cpu);
+		analog = new AnalogView(rect, (int)cpu);
 		AddChild(analog);
 		rect.OffsetBy(kMeterWidth, 0);
 	}

@@ -4,7 +4,6 @@
 
 PApplication::PApplication() : BApplication("application/x-vnd.ebata-analogpulse")
 {
-	AnalogWindow	*win;
 	BRect			bound;
 	BRect 			info = (new BScreen())->Frame();
 	system_info		sysInfo;
@@ -15,7 +14,8 @@ PApplication::PApplication() : BApplication("application/x-vnd.ebata-analogpulse
 	bound.OffsetTo(info.right - kBorderWidth - bound.Width(),
 						info.Height() - bound.Height() - kBorderWidth);
 
-	win = new AnalogWindow(bound, "AnalogPulse Lite");
+	// The window shows itself and stays alive for the life of the app.
+	new AnalogWindow(bound, "AnalogPulse Lite");
 }
 
 int main()
