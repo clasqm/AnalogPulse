@@ -5,7 +5,8 @@
 #include <Window.h>
 
 #define kMeterWidth		200.
-#define kMeterHeight	90.
+// 90 pixels plus the kGaugeGap of breathing room under the CPU identification
+#define kMeterHeight	95.
 #define kBorderWidth	5.
 
 class AnalogWindow : public BWindow {

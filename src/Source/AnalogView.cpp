@@ -52,11 +52,11 @@ void AnalogView::InitObject(BRect rt, int cpu)
 	oldActiveTime = cpuActiveTime(cpu);
 	oldSystemTime = system_time();
 	nowCPUTime = 0;
-	oldCPUTime = -1;
+	oldCPUTime = 0;
 
 	param.panelLength = rt.Width() / 2 - 3 * 7;
 	param.needle = (rt.Width() / 2 - 3 * 7) * 0.93;
-	param.meterCenter.Set(rt.Width() / 2, param.panelLength + 3 * 8);
+	param.meterCenter.Set(rt.Width() / 2, param.panelLength + 3 * 8 + kGaugeGap);
 	makeTable();
 	
 	makePanel(rt);

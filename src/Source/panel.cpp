@@ -166,8 +166,8 @@ cpuModelName(const char* brand, char* out, size_t outSize)
 }
 #endif // AP_HAVE_CPUID
 
-// The name and the clock share the top right corner of the panel, so cut the
-// name down until both fit.
+// The name and the clock share the top line of the panel, so cut the name
+// down until both fit.
 static void
 clipToWidth(BView* view, char* text, float maxWidth)
 {
@@ -241,7 +241,6 @@ getCPUIdentification(char* name, size_t nameSize, uint64* frequency)
 
 BBitmap* AnalogView::makePanel(BRect r)
 {
-	system_info		sysInfo;
 	BRect			rt;
 	short			i;
 	float			penSize;
@@ -250,8 +249,6 @@ BBitmap* AnalogView::makePanel(BRect r)
 	uint64			cpu_speed;
 	char			processor[64];
 	BFont			font;
-
-	get_system_info(&sysInfo);	
 
 	panel = new BBitmap(r, B_COLOR_8_BIT, true);
 	view = new BView(r, "", B_FOLLOW_NONE, B_WILL_DRAW);
@@ -301,8 +298,8 @@ BBitmap* AnalogView::makePanel(BRect r)
 		view->StrokeLine(rt.RightBottom(), rt.LeftTop());	
 	}
 
-	font.SetFamilyAndStyle("Baskerville MT Italic", 0);
-	view->SetFont(&font, 0);
+	font.SetFamilyAndStyle("Noto Serif", "Italic");
+	view->SetFont(&font, B_FONT_ALL);
 	view->SetFontSize(9);
 	
 	for(i = 0; i <= 100; i = i + 10)
@@ -333,48 +330,49 @@ BBitmap* AnalogView::makePanel(BRect r)
 	rt = r;
 
 
-	font.SetFamilyAndStyle("Dutch801 Rm BT", "Bold");
+	font.SetFamilyAndStyle("Noto Serif", "Bold");
 	view->SetFont(&font, B_FONT_ALL);
 	view->SetFontSize(12);
 	sprintf(buf, "CPU [%d]", param.cpu);
-	view->MovePenTo(param.meterCenter.x - view->StringWidth(buf)/ 2, 75);
+	view->MovePenTo(param.meterCenter.x - view->StringWidth(buf)/ 2, 75 + kGaugeGap);
 	view->DrawString(buf);
 	
-	if((uint32)(param.cpu + 1) == sysInfo.cpu_count)
+	// Every panel identifies its own processor, centred along the top.
+	font.SetFamilyAndStyle("Noto Sans", "Regular");
+	view->SetFont(&font);
+	view->SetFontSize(9);
+	getCPUIdentification(processor, sizeof(processor), &cpu_speed);
+
+	if(cpu_speed > 0)
 	{
+		int target = (int)(cpu_speed / 1000000);
+		int frac = target % 100;
+		int delta = -frac;
+		int freqs[] = { 100, 50, 25, 75, 33, 67, 20, 40, 60, 80, 10, 30, 70, 90 };
 
-		font.SetFamilyAndStyle("Swis721 BT", "Roman");
-		view->SetFont(&font);
-		view->SetFontSize(9);
-		getCPUIdentification(processor, sizeof(processor), &cpu_speed);
-
-		if(cpu_speed > 0)
-		{
-			int target = (int)(cpu_speed / 1000000);
-			int frac = target % 100;
-			int delta = -frac;
-			int freqs[] = { 100, 50, 25, 75, 33, 67, 20, 40, 60, 80, 10, 30, 70, 90 };
-
-			for (size_t x = 0; x < sizeof(freqs) / sizeof(freqs[0]); x++) {
-				int ndelta = freqs[x] - frac;
-				if (abs(ndelta) < abs(delta)) {
-					delta = ndelta;
-				}
+		for (size_t x = 0; x < sizeof(freqs) / sizeof(freqs[0]); x++) {
+			int ndelta = freqs[x] - frac;
+			if (abs(ndelta) < abs(delta)) {
+				delta = ndelta;
 			}
-			sprintf(buf, "%dMHz", target + delta);
-			clipToWidth(view, processor, rt.Width() - view->StringWidth(buf) - 8);
-			view->MovePenTo(rt.right - view->StringWidth(processor) - view->StringWidth(buf) - 5, 12);
-			view->DrawString(processor);
-			view->MovePenTo(rt.right - view->StringWidth(buf) - 3, 12);
-			view->DrawString(buf);
 		}
-		else
-		{
-			// No clock speed reported: just name the CPU.
-			clipToWidth(view, processor, rt.Width() - 6);
-			view->MovePenTo(rt.right - view->StringWidth(processor) - 3, 12);
-			view->DrawString(processor);
-		}
+		sprintf(buf, "%dMHz", target + delta);
+		clipToWidth(view, processor, rt.Width() - view->StringWidth(buf) - 8);
+		float nameClockGap = 4;
+		float lineWidth = view->StringWidth(processor) + nameClockGap
+			+ view->StringWidth(buf);
+		float x = rt.left + (rt.Width() - lineWidth) / 2;
+		view->MovePenTo(x, 12);
+		view->DrawString(processor);
+		view->MovePenTo(x + view->StringWidth(processor) + nameClockGap, 12);
+		view->DrawString(buf);
+	}
+	else
+	{
+		// No clock speed reported: just name the CPU.
+		clipToWidth(view, processor, rt.Width() - 6);
+		view->MovePenTo(rt.left + (rt.Width() - view->StringWidth(processor)) / 2, 12);
+		view->DrawString(processor);
 	}
 	
 	view->EndPicture();

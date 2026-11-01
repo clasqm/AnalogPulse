@@ -7,6 +7,11 @@
 #define	kTickMiddle		0.95
 #define	kTickEnd		1.0
 #define kPI				3.141592653589
+// The panel is 5 pixels taller than it used to be (kMeterHeight in
+// AnalogWindow.h), and all of that extra height goes between the CPU
+// identification line at the top and the "50" label of the gauge, which is
+// therefore drawn this much lower down.
+#define kGaugeGap		5.0
 
 #include <Point.h>
 #include <View.h>
