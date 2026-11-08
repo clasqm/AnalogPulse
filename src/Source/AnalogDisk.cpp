@@ -1,14 +1,13 @@
 #include <Application.h>
 #include <Archivable.h>
 #include <AppFileInfo.h>
-#include <FindDirectory.h>
 #include <Message.h>
 #include <OS.h>
-#include <Path.h>
 #include <Screen.h>
+#include <Volume.h>
+#include <VolumeRoster.h>
 
 #include <stdio.h>
-#include <sys/statvfs.h>
 
 #include "GaugeView.h"
 #include "GaugeWindow.h"
@@ -16,28 +15,26 @@
 
 #define kSignature	"application/x-vnd.takamatsu-analog-disk"
 
-// One pane showing how full the volume Haiku boots from is.
+// One pane showing how full the volume Haiku boots from is.  The boot volume
+// is asked for directly: going through a path (statvfs on the system
+// directory) also drags in path resolution, which can fail and then leaves
+// the gauge with nothing to show.
 static bool
-bootDiskUsage(short* percent, uint64* totalBytes)
+bootVolumeUsage(short* percent, uint64* capacity)
 {
-	BPath	path;
+	BVolumeRoster	roster;
+	BVolume			volume;
 
-	if (find_directory(B_SYSTEM_DIRECTORY, &path) != B_OK)
+	if (roster.GetBootVolume(&volume) != B_OK)
 		return false;
 
-	struct statvfs	vfs;
-	if (statvfs(path.Path(), &vfs) != 0)
+	off_t total = volume.Capacity();
+	off_t freeBytes = volume.FreeBytes();
+	if (total <= 0 || freeBytes < 0 || freeBytes > total)
 		return false;
 
-	uint64 total = vfs.f_blocks;
-	if (total == 0)
-		return false;
-
-	uint64 freeBlocks = vfs.f_bfree;
-	uint64 unit = vfs.f_frsize != 0 ? vfs.f_frsize : vfs.f_bsize;
-
-	*percent = (short)(((total - freeBlocks) * 100) / total);
-	*totalBytes = total * unit;
+	*percent = (short)(((total - freeBytes) * 100) / total);
+	*capacity = (uint64)total;
 	return true;
 }
 
@@ -82,9 +79,9 @@ short
 DiskView::SampleValue()
 {
 	short	percent;
-	uint64	total;
+	uint64	capacity;
 
-	if (!bootDiskUsage(&percent, &total))
+	if (!bootVolumeUsage(&percent, &capacity))
 		return 0;
 
 	return percent;
@@ -119,21 +116,20 @@ DiskView::Identification(char *name, size_t nameSize, char *extra,
 	size_t extraSize)
 {
 	short	percent;
-	uint64	total = 0;
+	uint64	capacity = 0;
 
 	extra[0] = '\0';
+	snprintf(name, nameSize, "/boot");
 
-	if (!bootDiskUsage(&percent, &total)) {
-		snprintf(name, nameSize, "boot disk");
+	if (!bootVolumeUsage(&percent, &capacity))
 		return;
-	}
 
-	if (total >= 1000ULL * 1024 * 1024 * 1024)
-		snprintf(name, nameSize, "%llu TB",
-			(unsigned long long)(total / (1024ULL * 1024ULL * 1024ULL * 1024ULL)));
+	if (capacity >= 1024ULL * 1024 * 1024 * 1024)
+		snprintf(extra, extraSize, "%.1f TB",
+			(double)(capacity / (1024ULL * 1024 * 1024)) / 1024.0);
 	else
-		snprintf(name, nameSize, "%llu GB",
-			(unsigned long long)(total / (1024ULL * 1024ULL * 1024ULL)));
+		snprintf(extra, extraSize, "%llu GB",
+			(unsigned long long)(capacity / (1024ULL * 1024 * 1024)));
 }
 
 

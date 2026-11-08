@@ -10,8 +10,9 @@ GaugeWindow::GaugeWindow(BRect bound, const char *title, BView *pane)
 
 	AddChild(pane);
 
-	// same refresh rate as AnalogPulse
-	SetPulseRate(200000.0);
+	// Poll ten times a second: memory and volume use move slowly, but a
+	// coarser interval makes short spikes easy to miss.
+	SetPulseRate(100000.0);
 
 	Unlock();
 

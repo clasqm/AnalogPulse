@@ -80,12 +80,15 @@ class _EXPORT GaugeView : public BView {
 							float start, float stop);
 			BBitmap*	MakePanel(BRect);
 			void		MakeTable(void);
+			void		DrawNeedle();
 			float		ScaleAngle(float);
 
 			panelParam	param;
 			BBitmap		*panel;
 			BView		*view;
 			AngleArry	angle[101];
+			// Value the needle on screen stands for, or -1 while nothing
+			// has been drawn yet (a reading of 0 is a real value).
 			short		oldCPUTime;
 
 	typedef	BView _inherited;

@@ -16,7 +16,7 @@ GaugeView::GaugeView(BRect r, int id)
 	// constructor body once the object is fully built.
 	panel = NULL;
 	view = NULL;
-	oldCPUTime = 0;
+	oldCPUTime = -1;
 	param.cpu = id;
 }
 
@@ -24,7 +24,7 @@ GaugeView::GaugeView(BMessage *data) : _inherited(data)
 {
 	panel = NULL;
 	view = NULL;
-	oldCPUTime = 0;
+	oldCPUTime = -1;
 }
 
 GaugeView::~GaugeView()
@@ -38,7 +38,7 @@ GaugeView::InitObject(BRect rt, int id, bool withDragger)
 	rt.OffsetTo(B_ORIGIN);
 	param.cpu = id;
 
-	oldCPUTime = 0;
+	oldCPUTime = -1;
 
 	param.panelLength = rt.Width() / 2 - 3 * 7;
 	param.needle = (rt.Width() / 2 - 3 * 7) * 0.93;
@@ -95,7 +95,6 @@ GaugeView::MessageReceived(BMessage *message)
 void
 GaugeView::UpdateNeedle(short cpuTime)
 {
-	BRect	updateRect;
 	BRect	rt;
 
 	if (cpuTime < 0)
@@ -103,7 +102,12 @@ GaugeView::UpdateNeedle(short cpuTime)
 	if (cpuTime > 100)
 		cpuTime = 100;
 
-	if (cpuTime != oldCPUTime) {
+	if (cpuTime == oldCPUTime)
+		return;
+
+	// Wipe the needle that is on screen.  The first reading has no needle
+	// to wipe yet, which is why a reading of 0 still gets drawn.
+	if (oldCPUTime >= 0) {
 		rt.SetRightBottom(param.meterCenter);
 		rt.SetLeftTop(angle[oldCPUTime].arry);
 		if (rt.left > rt.right) {
@@ -113,22 +117,37 @@ GaugeView::UpdateNeedle(short cpuTime)
 		}
 
 		DrawBitmap(panel, rt, rt);
-
-		const rgb_color kNeedleColor = {0, 0, 0, 0};
-		this->SetHighColor(kNeedleColor);
-
-		StrokeLine(param.meterCenter, angle[cpuTime].arry);
 	}
-	Sync();
+
 	oldCPUTime = cpuTime;
+	DrawNeedle();
+	Sync();
+}
+
+void
+GaugeView::DrawNeedle()
+{
+	if (oldCPUTime < 0)
+		return;
+
+	const rgb_color kNeedleColor = {0, 0, 0, 0};
+	SetHighColor(kNeedleColor);
+
+	StrokeLine(param.meterCenter, angle[oldCPUTime].arry);
 }
 
 void
 GaugeView::Draw(BRect updateRect)
 {
 	BAutolock lock(Window());
-	if (lock.IsLocked())
-		DrawBitmapAsync(panel, BPoint(0, 0));
+	if (!lock.IsLocked())
+		return;
+
+	// The bitmap only holds the panel, so the needle has to be put back
+	// after every redraw.  Otherwise it stays gone until the value moves
+	// again, which is what makes it blink out when the window is uncovered.
+	DrawBitmapAsync(panel, BPoint(0, 0));
+	DrawNeedle();
 }
 
 float
