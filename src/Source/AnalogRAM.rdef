@@ -1,0 +1,16 @@
+resource app_signature "application/x-vnd.takamatsu-analog-ram";
+
+resource app_name_catalog_entry "application/x-vnd.takamatsu-analog-ram:System name:AnalogRAM";
+
+resource app_version {
+	major = 1,
+	middle = 0,
+	minor = 0,
+	variety = 0,
+	internal = 0,
+	short_info = "AnalogRAM 1.0",
+	long_info = "AnalogRAM 1.0 - memory usage gauge"
+};
+
+/* B_MULTIPLE_LAUNCH */
+resource app_flags 0x00000002;

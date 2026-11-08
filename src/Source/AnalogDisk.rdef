@@ -1,0 +1,16 @@
+resource app_signature "application/x-vnd.takamatsu-analog-disk";
+
+resource app_name_catalog_entry "application/x-vnd.takamatsu-analog-disk:System name:AnalogDisk";
+
+resource app_version {
+	major = 1,
+	middle = 0,
+	minor = 0,
+	variety = 0,
+	internal = 0,
+	short_info = "AnalogDisk 1.0",
+	long_info = "AnalogDisk 1.0 - boot volume usage gauge"
+};
+
+/* B_MULTIPLE_LAUNCH */
+resource app_flags 0x00000002;
