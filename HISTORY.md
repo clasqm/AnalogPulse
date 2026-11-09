@@ -59,7 +59,8 @@ labels it `/boot`, and polls ten times a second.
 
 `acb954c` adds a temporary one-shot alert and `stderr` line naming the failing
 volume call, so a gauge stuck at zero says whether the query failed or the
-volume really is empty.
+volume really is empty. No alert appeared on the test machine, which confirmed
+the query itself, and the reporting was then removed again.
 
 No build was ever run in the development container; there is no Haiku
 toolchain in it, so compiling and testing stayed on Haiku and the work here

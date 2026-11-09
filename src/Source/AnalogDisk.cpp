@@ -1,4 +1,3 @@
-#include <Alert.h>
 #include <Application.h>
 #include <Archivable.h>
 #include <AppFileInfo.h>
@@ -9,7 +8,6 @@
 #include <VolumeRoster.h>
 
 #include <stdio.h>
-#include <string.h>
 
 #include "GaugeView.h"
 #include "GaugeWindow.h"
@@ -21,64 +19,25 @@
 // is asked for directly: going through a path (statvfs on the system
 // directory) also drags in path resolution, which can fail and then leaves
 // the gauge with nothing to show.
-//
-// A failure says why in problem, so SampleValue() can report it once.  Without
-// that a gauge stuck at 0 is indistinguishable from a broken volume query.
 static bool
-queryBootVolume(short* percent, uint64* capacity, char* problem,
-	size_t problemSize)
+bootVolumeUsage(short* percent, uint64* capacity)
 {
 	BVolumeRoster	roster;
 	BVolume			volume;
-	status_t		status;
 
-	problem[0] = '\0';
-
-	status = roster.GetBootVolume(&volume);
-	if (status != B_OK) {
-		snprintf(problem, problemSize,
-			"BVolumeRoster::GetBootVolume() failed: %s (0x%08lx)",
-			strerror(status), (unsigned long)status);
+	if (roster.GetBootVolume(&volume) != B_OK)
 		return false;
-	}
 
+	// Both calls give back an error code rather than a number on failure.
 	off_t total = volume.Capacity();
 	off_t freeBytes = volume.FreeBytes();
 
-	if (total <= 0) {
-		snprintf(problem, problemSize,
-			"BVolume::Capacity() returned %lld (%s, 0x%08lx)",
-			(long long)total, strerror((status_t)total),
-			(unsigned long)total);
+	if (total <= 0 || freeBytes < 0 || freeBytes > total)
 		return false;
-	}
-
-	if (freeBytes < 0) {
-		snprintf(problem, problemSize,
-			"BVolume::FreeBytes() returned %lld (%s, 0x%08lx)",
-			(long long)freeBytes, strerror((status_t)freeBytes),
-			(unsigned long)freeBytes);
-		return false;
-	}
-
-	if (freeBytes > total) {
-		snprintf(problem, problemSize,
-			"BVolume::FreeBytes() (%lld) is larger than Capacity() (%lld)",
-			(long long)freeBytes, (long long)total);
-		return false;
-	}
 
 	*percent = (short)(((total - freeBytes) * 100) / total);
 	*capacity = (uint64)total;
 	return true;
-}
-
-static bool
-bootVolumeUsage(short* percent, uint64* capacity)
-{
-	char	problem[256];
-
-	return queryBootVolume(percent, capacity, problem, sizeof(problem));
 }
 
 class _EXPORT DiskView : public GaugeView {
@@ -118,34 +77,16 @@ DiskView::Instantiate(BMessage *data)
 	return new DiskView(data);
 }
 
-// Temporary diagnostics: an unlit gauge looks the same whether the volume
-// query failed or the volume is genuinely empty, so the first failure is
-// reported out loud.  Go() blocks the pane until the button is pressed and
-// deletes the alert itself; the diagnosis also goes to stderr.  Delete this
-// together with the problem reporting in queryBootVolume() once the volume
-// reading is known to work everywhere.
-static bool sProblemReported = false;
-
 short
 DiskView::SampleValue()
 {
 	short	percent;
 	uint64	capacity;
-	char	problem[256];
 
-	if (queryBootVolume(&percent, &capacity, problem, sizeof(problem)))
-		return percent;
+	if (!bootVolumeUsage(&percent, &capacity))
+		return 0;
 
-	if (!sProblemReported) {
-		sProblemReported = true;
-		fprintf(stderr, "AnalogDisk: %s\n", problem);
-		BAlert *alert = new BAlert("AnalogDisk", problem, "OK", NULL, NULL,
-			B_WIDTH_AS_USUAL, B_WARNING_ALERT);
-		if (alert != NULL)
-			alert->Go();
-	}
-
-	return 0;
+	return percent;
 }
 
 const char*
